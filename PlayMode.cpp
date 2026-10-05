@@ -63,6 +63,10 @@ Load< SharedTexture > star_yellow_texture(LoadTagDefault, []() -> SharedTexture 
 	return new SharedTexture(data_path("assets/star_yellow.png"));
 });
 
+Load< SharedTexture > big_star_texture(LoadTagDefault, []() -> SharedTexture const * {
+	return new SharedTexture(data_path("assets/star.png"));
+});
+
 Load< SharedTexture > star_blue_texture(LoadTagDefault, []() -> SharedTexture const * {
 	return new SharedTexture(data_path("assets/star_blue.png"));
 });
@@ -79,16 +83,20 @@ Load< SharedTexture > smoke_texture(LoadTagDefault, []() -> SharedTexture const 
 	return new SharedTexture(data_path("assets/smoke.png"));
 });
 
+Load< SharedTexture > congrat_texture(LoadTagDefault, []() -> SharedTexture const * {
+	return new SharedTexture(data_path("assets/congrat.png"));
+});
+
 float cross(glm::vec2 a, glm::vec2 b) {
 	return a.x * b.y - b.x * a.y;
 }
 
+const glm::vec2 GOAL_POS = glm::vec2(50.0f, -10.0f);
 
-PlayMode::PlayMode() : scene(*main_scene) {
+PlayMode::PlayMode() : scene(*main_scene), text_renderer("sample", data_path("assets/fonts/NotoSans.ttf")) {
 	//get pointer to camera for convenience:
 	if (scene.cameras.size() != 1) throw std::runtime_error("Expecting scene to have exactly one camera, but it has " + std::to_string(scene.cameras.size()));
 	camera = &scene.cameras.front();
-
 
 	//construct level.
 	{
@@ -113,7 +121,7 @@ PlayMode::PlayMode() : scene(*main_scene) {
 
 	// add a goal
 	{
-		add_sprite(*goal_texture.value, glm::vec2(50.0f, -10.0f), glm::vec2(5.0f));
+		add_sprite(*goal_texture.value, GOAL_POS, glm::vec2(5.0f));
 	}
 
 	//add one cute rocket
@@ -230,6 +238,7 @@ void PlayMode::update(float elapsed) {
 
 	{ // run physics frame for each object in game.
 		// elapsed is not stable... so there will be some condition for doing a frame.
+		used_time += elapsed;
 		physics_frame_delta += elapsed;
 		shoot_cooldown = std::max(0.0f, shoot_cooldown - elapsed);
 
@@ -266,6 +275,28 @@ void PlayMode::update(float elapsed) {
 				shoot_cooldown = 0.5f;
 				shoot_held_frame = 0;
 				bullets_shot++;
+			}
+		}
+
+		// winning condition check
+		if (glm::length(rocket->position - GOAL_POS) < 3.5f && !game_clear) {
+			game_clear = true;
+			add_sprite(*congrat_texture.value, glm::vec2(0.0f, 0.0f), glm::vec2(40.0f));
+
+			text_renderer.text = "Time: " + std::to_string(static_cast<int>(used_time)) + "   Bullets: " + std::to_string(bullets_shot) + "   Damage: " + std::to_string(damage);
+			auto texture = text_renderer.Rasterize(0, text_w, text_h);
+			text_texture.overwrite(std::move(texture), static_cast<GLsizei>(text_w), static_cast<GLsizei>(text_h));
+			win_sprite = add_sprite(text_texture, glm::vec2(5.0f, -20.0f), glm::vec2(text_w * 0.03f, text_h * 0.03f));
+			win_sprite->tint = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+
+			if (used_time < 50.0f) {
+				add_sprite(*big_star_texture.value, glm::vec2(-23.2f, 0.0f), glm::vec2(12.0f));
+			}
+			if (bullets_shot < 20) {
+				add_sprite(*big_star_texture.value, glm::vec2(0.0f, 0.0f), glm::vec2(12.0f));
+			}
+			if (damage < 100) {
+				add_sprite(*big_star_texture.value, glm::vec2(20.8f, 0.0f), glm::vec2(12.0f));
 			}
 		}
 	}
@@ -326,7 +357,10 @@ void PlayMode::update(float elapsed) {
 				++iter;
 			}
 		}
+	}
 
+	if (game_clear) { // if game beaten
+		
 	}
 
 	//reset button press counters:
@@ -526,6 +560,10 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 // TEXTURE & SPRITE
 
+SharedTexture::SharedTexture() {
+	glGenTextures(1, &tex);
+}
+
 SharedTexture::SharedTexture(std::string file_path) {
 	glGenTextures(1, &tex);
 	glBindTexture(GL_TEXTURE_2D, tex);
@@ -535,6 +573,33 @@ SharedTexture::SharedTexture(std::string file_path) {
 	
 	load_png(file_path, &image_size, &image,  LowerLeftOrigin);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, image_size.x, image_size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+SharedTexture::SharedTexture(std::vector<glm::u8vec4> image, GLsizei w, GLsizei h) {
+	image_size.x = w;
+	image_size.y = h;
+	glGenTextures(1, &tex);
+	glBindTexture(GL_TEXTURE_2D, tex);
+	
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+ void SharedTexture::overwrite(std::vector<glm::u8vec4> image, GLsizei w, GLsizei h) {
+	image_size.x = w;
+	image_size.y = h;
+	glBindTexture(GL_TEXTURE_2D, tex);
+	
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);

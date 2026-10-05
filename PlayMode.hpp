@@ -1,5 +1,6 @@
 #include "Mode.hpp"
 
+#include "TextRenderer.hpp"
 #include "Scene.hpp"
 
 #include <glm/glm.hpp>
@@ -20,8 +21,12 @@ struct SharedTexture {
 	GLuint tex = 0;
 	glm::uvec2 image_size;
 
+	SharedTexture();
 	SharedTexture(std::string file_path);
+	SharedTexture(std::vector<glm::u8vec4> image, GLsizei w, GLsizei h);
 	~SharedTexture();
+
+	void overwrite(std::vector<glm::u8vec4> image, GLsizei w, GLsizei h);
 };
 
 // Sprite2D!
@@ -144,9 +149,13 @@ struct PlayMode : Mode {
 	RigidBody *rocket = nullptr;
 	Sprite2D *flame = nullptr;
 
-	// //TEXTRENDER
-	// size_t text_w;
-	// size_t text_h;
+	//TEXTRENDER
+	size_t text_w = 0;
+	size_t text_h = 0;
+	TextRenderer text_renderer;
+	SharedTexture text_texture;
+	Sprite2D *win_sprite = nullptr;
+
 
 	//action
 	size_t shoot_held_frame = 0;
@@ -157,6 +166,7 @@ struct PlayMode : Mode {
 	int flaming = 0; // 1 = counterclockwise, -1=clockwise, 0=stop
 
 	//statistics
+	float used_time = 0.0f;
 	int bullets_shot = 0;
 	int rocket_collision_count = 0;
 	int damage = 0;
