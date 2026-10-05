@@ -17,7 +17,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
-constexpr int FONT_SIZE = 36;
+constexpr int FONT_SIZE = 72;
 constexpr int MARGIN = static_cast<int>(FONT_SIZE * 0.5f);
 
 // The Text Renderer class; has a method that can render text.

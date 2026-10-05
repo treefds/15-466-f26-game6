@@ -112,7 +112,8 @@ struct PlayMode : Mode {
 	//helper functions to add stuff
 	virtual Sprite2D* add_sprite(std::string file_path, glm::vec2 position, glm::vec2 scale);
 	virtual Sprite2D* add_sprite(SharedTexture const &shared_texture, glm::vec2 position, glm::vec2 scale);
-	virtual RigidBody* add_body(std::string name, glm::vec2 position, float mass, float radius, Sprite2D *sprite) ;
+	virtual RigidBody* add_body(std::string name, glm::vec2 position, float mass, float radius, Sprite2D *sprite);
+	virtual Sprite2D* add_smoke(SharedTexture const &shared_texture, glm::vec2 position, glm::vec2 scale, float strength);
 
 	virtual void step_physics_frame();
 	virtual void generate_bullet();
@@ -136,8 +137,16 @@ struct PlayMode : Mode {
 	//bodies!
 	std::list<RigidBody> bodies;
 
+	// smokes!
+	std::list<std::list<Sprite2D>::iterator> smoke_list;
+
 	//ROCKET
 	RigidBody *rocket = nullptr;
+	Sprite2D *flame = nullptr;
+
+	// //TEXTRENDER
+	// size_t text_w;
+	// size_t text_h;
 
 	//action
 	size_t shoot_held_frame = 0;
@@ -145,9 +154,12 @@ struct PlayMode : Mode {
 	float shoot_cooldown = 0.0f;
 	float shoot_pressed = 0.0f;
 	bool shot = false;
+	int flaming = 0; // 1 = counterclockwise, -1=clockwise, 0=stop
 
 	//statistics
 	int bullets_shot = 0;
 	int rocket_collision_count = 0;
+	int damage = 0;
+	bool game_clear = false;
 
 };

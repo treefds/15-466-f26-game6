@@ -67,6 +67,18 @@ Load< SharedTexture > star_blue_texture(LoadTagDefault, []() -> SharedTexture co
 	return new SharedTexture(data_path("assets/star_blue.png"));
 });
 
+Load< SharedTexture > goal_texture(LoadTagDefault, []() -> SharedTexture const * {
+	return new SharedTexture(data_path("assets/goal.png"));
+});
+
+Load< SharedTexture > flame_texture(LoadTagDefault, []() -> SharedTexture const * {
+	return new SharedTexture(data_path("assets/flame.png"));
+});
+
+Load< SharedTexture > smoke_texture(LoadTagDefault, []() -> SharedTexture const * {
+	return new SharedTexture(data_path("assets/smoke.png"));
+});
+
 float cross(glm::vec2 a, glm::vec2 b) {
 	return a.x * b.y - b.x * a.y;
 }
@@ -99,6 +111,11 @@ PlayMode::PlayMode() : scene(*main_scene) {
 		}
 	}
 
+	// add a goal
+	{
+		add_sprite(*goal_texture.value, glm::vec2(50.0f, -10.0f), glm::vec2(5.0f));
+	}
+
 	//add one cute rocket
 	{
 		std::mt19937 mt(GameMap::LEVEL_SEED | 0x12b34);
@@ -127,6 +144,9 @@ PlayMode::PlayMode() : scene(*main_scene) {
 			spr->set_z(3.0f);
 		}
 	}
+
+	// propulsor? flame
+	flame = add_sprite(*flame_texture.value, glm::vec2(0.0f), glm::vec2(6.0f));
 
 	// z-sort sprites
 	scene.drawables.sort([](Scene::Drawable const &dr1, Scene::Drawable const &dr2) {return dr1.transform->position.z > dr2.transform->position.z;});
@@ -225,11 +245,16 @@ void PlayMode::update(float elapsed) {
 
 			step_physics_frame();
 
-
+			// controls
 			if (left.pressed) {
 				rocket->rotation_speed += 0.5f * TIMESTEP;
+				flaming = 1;
+
 			} else if (right.pressed) {
 				rocket->rotation_speed += -0.5f * TIMESTEP;
+				flaming = -1;
+			} else {
+				flaming = 0;
 			}
 			rocket->rotation_speed = std::clamp(rocket->rotation_speed, -2.0f, 2.0f);
 
@@ -245,12 +270,52 @@ void PlayMode::update(float elapsed) {
 		}
 	}
 
+	// --------------------------- AESTHETICS ----------------------------
+
 	{ // update body sprites
 
 		for (auto iter = bodies.begin(); iter != bodies.end(); ++iter) {
 			iter->sprite->set_position(iter->position);
 			iter->sprite->set_rotation(iter->rotation);
 		}
+	}
+
+	{ // update smoke sprites
+		for (auto smoke = smoke_list.begin(); smoke != smoke_list.end();) {
+			(*smoke)->tint.a = (*smoke)->tint.a - elapsed * 0.2f;
+			if ((*smoke)->tint.a <= 0.0f) {
+				sprites.erase((*smoke));
+				smoke = smoke_list.erase(smoke);
+			} else {
+				 ++smoke;
+			}
+		}
+	}
+
+	{ // update flame sprite
+		if (flaming == 0) {
+			flame->tint.a = 0.0f;
+		} else {
+			flame->tint.a = 1.0f;
+
+			glm::vec2 rocket_dir = glm::vec2(glm::cos(rocket->rotation), glm::sin(rocket->rotation));
+			glm::vec2 rocket_norm = glm::vec2(-rocket_dir.y, rocket_dir.x);
+
+			flame->set_position(rocket->position - rocket_dir * 1.8f + 1.5f * rocket_norm * static_cast<float>(flaming));
+			flame->set_rotation(flaming < 0 ? rocket->rotation : rocket->rotation + PI);
+			
+		}
+	}
+
+	{ // update squeezy rocket sprite
+		if (shoot_held_frame > 0) {
+			float actual_frame = std::clamp(shoot_held_frame / 1.0f, 0.0f, 75.0f);
+			rocket->sprite->set_scale(glm::vec2(6.0f - std::sqrt(actual_frame / 75.0f) * 2.0f, 6.0f));
+		} else if (shoot_cooldown > 0.0f) {
+			float v = std::clamp(shoot_cooldown - 0.4f, 0.0f, 0.1f);
+			rocket->sprite->set_scale(glm::vec2(6.0f - 20 * v, 6.0f + 10 * v));
+		}
+
 	}
 
 	{ // remove bodies that has exited
@@ -322,6 +387,7 @@ void PlayMode::step_physics_frame() {
 			}
 		}
 
+		glm::vec2 old_velocity = iter->velocity;
 		if (eother != bodies.end()) {
 			// move by that hit length, reset own velocity and other's velocity
 			// for now, use a bad TODO implementation (stop)
@@ -375,6 +441,12 @@ void PlayMode::step_physics_frame() {
 				rocket_collision_count++;
 			}
 			// apply deaccel: none
+
+			// Aesthetics
+			float strength = glm::length(iter->velocity - old_velocity) * iter->mass;
+			if (iter->name == "Rocket" || eother->name == "Rocket")
+				damage += static_cast<int>(strength);
+			add_smoke(*smoke_texture.value, iter->position + dir * iter->radius, glm::vec2(std::sqrt(strength) * 1.0f), strength);
 
 		} else {
 			iter->position += iter->velocity * TIMESTEP;
@@ -435,12 +507,15 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		));
 
 		constexpr float H = 0.09f;
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
+		std::string text = "A/D to rotate; Hold SPACE then release to fire!";
+		text += " shot=" + std::to_string(bullets_shot) + ", damage=" + std::to_string(damage);
+
+		lines.draw_text(text,
 			glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
 		float ofs = 2.0f / drawable_size.y;
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
+		lines.draw_text(text,
 			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + 0.1f * H + ofs, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
@@ -629,4 +704,15 @@ RigidBody* PlayMode::add_body(std::string name, glm::vec2 position, float mass, 
 	bodies.emplace_back(position, mass, radius, sprite);
 	bodies.back().name = name;
 	return &bodies.back();
+}
+
+Sprite2D* PlayMode::add_smoke(SharedTexture const &shared_texture, glm::vec2 position, glm::vec2 scale, float strength) {
+	Sprite2D *spr = add_sprite(shared_texture, position, scale);
+	
+	auto iter = --sprites.end();
+	smoke_list.emplace_back(iter);
+
+	spr->tint.a = std::clamp(0.01f * strength, 0.0f, 1.0f);
+
+	return spr;
 }
