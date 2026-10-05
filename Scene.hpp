@@ -22,6 +22,8 @@
 #include <vector>
 #include <unordered_map>
 
+const float HALFH = 40.0F;
+
 struct Scene {
 	struct Transform {
 		//Transform names are useful for debugging and looking up locations in a loaded scene:

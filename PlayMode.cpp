@@ -7,49 +7,49 @@
 #include "Load.hpp"
 #include "gl_errors.hpp"
 #include "data_path.hpp"
+#include "load_save_png.hpp"
 
 #include <glm/gtc/type_ptr.hpp>
 
 #include <random>
 
-GLuint hexapod_meshes_for_lit_color_texture_program = 0;
-Load< MeshBuffer > hexapod_meshes(LoadTagDefault, []() -> MeshBuffer const * {
-	MeshBuffer const *ret = new MeshBuffer(data_path("hexapod.pnct"));
-	hexapod_meshes_for_lit_color_texture_program = ret->make_vao_for_program(lit_color_texture_program->program);
+GLuint plane_program = 0;
+Load< MeshBuffer > plane_meshes(LoadTagDefault, []() -> MeshBuffer const * {
+	MeshBuffer const *ret = new MeshBuffer(data_path("plane.pnct"));
+	plane_program = ret->make_vao_for_program(lit_color_texture_program->program);
 	return ret;
 });
 
-Load< Scene > hexapod_scene(LoadTagDefault, []() -> Scene const * {
-	return new Scene(data_path("hexapod.scene"), [&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name){
-		Mesh const &mesh = hexapod_meshes->lookup(mesh_name);
+
+Load< Scene > main_scene(LoadTagDefault, []() -> Scene const * {
+	return new Scene(data_path("plane.scene"), [&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name){
+		Mesh const &mesh = plane_meshes->lookup(mesh_name);
 
 		scene.drawables.emplace_back(transform);
 		Scene::Drawable &drawable = scene.drawables.back();
 
 		drawable.pipeline = lit_color_texture_program_pipeline;
 
-		drawable.pipeline.vao = hexapod_meshes_for_lit_color_texture_program;
+		drawable.pipeline.vao = plane_program;
 		drawable.pipeline.type = mesh.type;
 		drawable.pipeline.start = mesh.start;
 		drawable.pipeline.count = mesh.count;
 
+		// force set invisible for existing stuff
+		drawable.blended = true;
+		drawable.pipeline.set_uniforms = []() {
+			glUniform4fv(lit_color_texture_program->TINT_vec4, 1, glm::value_ptr(glm::vec4(0.0f)));
+		};
+
 	});
 });
 
-PlayMode::PlayMode() : scene(*hexapod_scene) {
+PlayMode::PlayMode() : scene(*main_scene) {
 	//get pointers to leg for convenience:
 	for (auto &transform : scene.transforms) {
 		if (transform.name == "Hip.FL") hip = &transform;
-		else if (transform.name == "UpperLeg.FL") upper_leg = &transform;
-		else if (transform.name == "LowerLeg.FL") lower_leg = &transform;
 	}
-	if (hip == nullptr) throw std::runtime_error("Hip not found.");
-	if (upper_leg == nullptr) throw std::runtime_error("Upper leg not found.");
-	if (lower_leg == nullptr) throw std::runtime_error("Lower leg not found.");
-
-	hip_base_rotation = hip->rotation;
-	upper_leg_base_rotation = upper_leg->rotation;
-	lower_leg_base_rotation = lower_leg->rotation;
+	// if (hip == nullptr) throw std::runtime_error("Hip not found.");
 
 	//get pointer to camera for convenience:
 	if (scene.cameras.size() != 1) throw std::runtime_error("Expecting scene to have exactly one camera, but it has " + std::to_string(scene.cameras.size()));
@@ -120,26 +120,8 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 }
 
 void PlayMode::update(float elapsed) {
-
-	//slowly rotates through [0,1):
-	wobble += elapsed / 10.0f;
-	wobble -= std::floor(wobble);
-
-	hip->rotation = hip_base_rotation * glm::angleAxis(
-		glm::radians(5.0f * std::sin(wobble * 2.0f * float(M_PI))),
-		glm::vec3(0.0f, 1.0f, 0.0f)
-	);
-	upper_leg->rotation = upper_leg_base_rotation * glm::angleAxis(
-		glm::radians(7.0f * std::sin(wobble * 2.0f * 2.0f * float(M_PI))),
-		glm::vec3(0.0f, 0.0f, 1.0f)
-	);
-	lower_leg->rotation = lower_leg_base_rotation * glm::angleAxis(
-		glm::radians(10.0f * std::sin(wobble * 3.0f * 2.0f * float(M_PI))),
-		glm::vec3(0.0f, 0.0f, 1.0f)
-	);
-
 	//move camera:
-	{
+	if (0 > 1) {
 
 		//combine inputs into a move:
 		constexpr float PlayerSpeed = 30.0f;
@@ -158,6 +140,14 @@ void PlayMode::update(float elapsed) {
 		glm::vec3 frame_forward = -frame[2];
 
 		camera->transform->position += move.x * frame_right + move.y * frame_forward;
+	}
+
+	{ // random
+		if (left.downs > 0) {
+			sprites.emplace_back(scene, data_path("assets/rocket.png"));
+			sprites.back().set_position(glm::vec2((rand() % 30) / 3.0f, (rand() % 30) / 3.0f));
+			sprites.back().set_scale(glm::vec2(2.0f, 2.0f));
+		}
 	}
 
 	//reset button press counters:
@@ -211,4 +201,108 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
 	}
+}
+
+
+
+Sprite2D::Sprite2D(Scene &scene): scene(scene) {
+	add_drawable_and_transform();
+	is_valid = true;
+}
+
+void Sprite2D::add_drawable_and_transform() {
+	// initialize with scene, with texture
+	// load mesh and add as drawable, and read sprite file
+	Mesh const &mesh = plane_meshes->lookup("Plane");
+
+	// add a new transform
+	scene.transforms.emplace_back();
+	Scene::Transform &xform = scene.transforms.back();
+
+	// Complete the transform and drawable init
+	xform.name = "Sprite_" + std::to_string(sprite_count++);
+	xform.parent = nullptr;
+	xform.position = glm::vec3(0.0f);
+	xform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
+	xform.rotation = glm::quat(glm::vec3{0.0f, 0.0f, 0.0f});
+
+	scene.drawables.emplace_back(&xform);
+	Scene::Drawable &drawable_ = scene.drawables.back();
+	drawable = &drawable_;
+	drawable_.pipeline = lit_color_texture_program_pipeline;
+	drawable_.pipeline.vao = plane_program;
+	drawable_.pipeline.type = mesh.type;
+	drawable_.pipeline.start = mesh.start;
+	drawable_.pipeline.count = mesh.count;
+	drawable_.blended = true;
+
+	// transform and drawable
+	transform_iter = --scene.transforms.end();
+	drawable_iter = --scene.drawables.end();
+}
+
+Sprite2D::Sprite2D(Scene &scene, std::string file_path): scene(scene) {
+	add_drawable_and_transform();
+	is_valid = true;
+
+	// load texture from PNG file
+	glGenTextures(1, &tex);
+	glBindTexture(GL_TEXTURE_2D, tex);
+
+	// get PNG!
+	glm::uvec2 image_size;
+	std::vector<glm::u8vec4> image(0);
+	
+	load_png(file_path, &image_size, &image,  LowerLeftOrigin);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_size.x, image_size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data());
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	drawable->pipeline.textures[0].texture = tex;
+	drawable->pipeline.textures[0].target = GL_TEXTURE_2D;
+
+	// Set uniforms to modulate color
+	drawable->pipeline.set_uniforms = [this]() {
+		glUniform4fv(lit_color_texture_program->TINT_vec4, 1, glm::value_ptr(this->tint));
+		glUniform3f(lit_color_texture_program->LIGHT_DIRECTION_vec3, 0.0f, 0.0f, 0.0f);
+	};
+
+	tint = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+	is_valid = true;
+}
+
+Sprite2D::~Sprite2D() {
+	if (!is_valid) return;
+	// release texture...
+	if (tex != 0) {
+		glDeleteTextures(1, &tex);
+	}
+	scene.drawables.erase(drawable_iter);
+	scene.transforms.erase(transform_iter);
+
+}
+
+void Sprite2D::set_position(glm::vec2 new_position) {
+	position = new_position;
+	drawable->transform->position.x = position.x;
+	drawable->transform->position.y = position.y;
+	std::cout << "aaaa" << position.x << "y" << position.y << "\n";
+}
+
+void Sprite2D::set_scale(glm::vec2 new_scale) {
+	scale = new_scale;
+	drawable->transform->scale.x = scale.x;
+	drawable->transform->scale.y = scale.y;
+}
+
+void Sprite2D::set_rotation(glm::f32 new_rotation) {
+	rotation = new_rotation;
+	drawable->transform->rotation = glm::quat(glm::vec3(0.0f, 0.0f, rotation));
+}
+
+void Sprite2D::set_z(glm::f32 new_z) {
+	z = new_z;
+	drawable->transform->position.z = z;
 }

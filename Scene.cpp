@@ -74,7 +74,14 @@ glm::mat4x3 Scene::Transform::make_local_from_world() const {
 //-------------------------
 
 glm::mat4 Scene::Camera::make_projection() const {
-	return glm::infinitePerspective( fovy, aspect, near );
+	// return glm::infinitePerspective( fovy, aspect, near );
+
+	// Veritcal height is kept constant while horizontal width is dynamic
+	// Vertically, the viewport height is 80 units. Number is super arbitrary
+	GLint viewport[4];
+	glGetIntegerv(GL_VIEWPORT, viewport);
+	
+	return glm::ortho(-HALFH / viewport[3] * viewport[2], HALFH  / viewport[3] * viewport[2], -HALFH, HALFH, 100.0f, -100.0f);
 }
 
 //-------------------------
