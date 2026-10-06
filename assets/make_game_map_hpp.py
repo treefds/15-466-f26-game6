@@ -1,5 +1,6 @@
 TEMPLATE = """\
 #include <vector>
+#include <array>
 
 namespace GameMap {{
     const size_t LEVEL_SEED = 42;

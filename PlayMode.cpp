@@ -681,6 +681,7 @@ Sprite2D::Sprite2D(Scene &scene): scene(scene) {
 void Sprite2D::add_drawable_and_transform() {
 	// initialize with scene, with texture
 	// load mesh and add as drawable, and read sprite file
+	static int sprite_count = 0;
 	Mesh const &mesh = plane_meshes->lookup("Plane");
 
 	// add a new transform

@@ -11,6 +11,7 @@
 
 #include "TextRenderer.hpp"
 
+#include <algorithm>
 #include <math.h>
 #include <hb.h>
 #include <hb-ft.h>
@@ -94,8 +95,8 @@ std::vector< glm::u8vec4 > TextRenderer::Rasterize(size_t length, size_t &width,
             printf("Error loading Glyph\n");
         }
         
-        int x_position_origin = current_x + pos[idx].x_offset;
-        int y_position_origin = current_y + pos[idx].y_offset;
+        float x_position_origin = current_x + static_cast<float>(pos[idx].x_offset) / 64.0f;
+        float y_position_origin = current_y + static_cast<float>(pos[idx].y_offset) / 64.0f;
 
         int x_position = static_cast<int>(x_position_origin) + ft_face->glyph->bitmap_left;
         // FONT SIZE is the baseline of the font (line below g,q,p...)

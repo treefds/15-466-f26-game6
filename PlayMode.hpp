@@ -79,7 +79,6 @@ private:
 	// constructor shared
 	void add_drawable_and_transform();
 };
-static int sprite_count = 0;
 
 
 // RigidBody!
