@@ -153,6 +153,14 @@ PlayMode::PlayMode() : scene(*main_scene), text_renderer("sample", data_path("as
 		}
 	}
 
+	{// initialize history
+		history = std::unordered_map<std::string, std::list<RBRecord>>();
+		for (RigidBody &body : bodies) {
+			history[body.name] = std::list<RBRecord>();
+			history[body.name].emplace_back(0, body.position, body.velocity, body.mass, body.radius, body.rotation, body.rotation_speed);
+		}
+	}
+
 	// propulsor? flame
 	flame = add_sprite(*flame_texture.value, glm::vec2(0.0f), glm::vec2(6.0f));
 
@@ -189,6 +197,26 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			shoot.downs += 1;
 			shoot.pressed = true;
 			return true;
+		} else if (evt.key.key == SDLK_R) {
+			rewind.downs += 1;
+			rewind.pressed = true;
+			return true;
+		} else if (evt.key.key == SDLK_1) {
+			framestepping_interval = TIMESTEP;
+			physics_frame_delta = 0.0f;
+			return true;
+		} else if (evt.key.key == SDLK_2) {
+			framestepping_interval = TIMESTEP * 2;
+			physics_frame_delta = 0.0f;
+			return true;
+		} else if (evt.key.key == SDLK_3) {
+			framestepping_interval = TIMESTEP * 5;
+			physics_frame_delta = 0.0f;
+			return true;
+		} else if (evt.key.key == SDLK_4) {
+			framestepping_interval = 0.5f;
+			physics_frame_delta = 0.0f;
+			return true;
 		}
 	} else if (evt.type == SDL_EVENT_KEY_UP) {
 		if (evt.key.key == SDLK_A) {
@@ -207,7 +235,11 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			shoot.pressed = false;
 			shoot.downs = 0;
 			return true;
-		}
+		} else if (evt.key.key == SDLK_R) {
+			rewind.pressed = false;
+			rewind.downs = 0;
+			return true;
+		} 
 	}
 
 	return false;
@@ -242,39 +274,92 @@ void PlayMode::update(float elapsed) {
 		physics_frame_delta += elapsed;
 		shoot_cooldown = std::max(0.0f, shoot_cooldown - elapsed);
 
-		while (physics_frame_delta > TIMESTEP) {
-			physics_frame_delta -= TIMESTEP;
+		while (physics_frame_delta > framestepping_interval) {
+			physics_frame_delta -= framestepping_interval;
 
-			shot = false;
-			if (shoot_cooldown == 0.0f && shoot.downs) {
-				shoot_held_frame++;
-			} else if (shoot_cooldown == 0.0f && shoot_held_frame > 0) {
-				shot = true;
-			}
+			if (!rewind.pressed) {
+				shot = false;
+				if (shoot_cooldown == 0.0f && shoot.downs) {
+					shoot_held_frame++;
+				} else if (shoot_cooldown == 0.0f && shoot_held_frame > 0) {
+					shot = true;
+				}
 
-			step_physics_frame();
+				step_physics_frame();
 
-			// controls
-			if (left.pressed) {
-				rocket->rotation_speed += 0.5f * TIMESTEP;
-				flaming = 1;
+				// controls
+				if (left.pressed) {
+					rocket->rotation_speed += 0.5f * TIMESTEP;
+					flaming = 1;
 
-			} else if (right.pressed) {
-				rocket->rotation_speed += -0.5f * TIMESTEP;
-				flaming = -1;
+				} else if (right.pressed) {
+					rocket->rotation_speed += -0.5f * TIMESTEP;
+					flaming = -1;
+				} else {
+					flaming = 0;
+				}
+				rocket->rotation_speed = std::clamp(rocket->rotation_speed, -2.0f, 2.0f);
+
+				if (shot) {
+					glm::vec2 rocket_facing = glm::vec2(glm::cos(rocket->rotation), glm::sin(rocket->rotation));
+					float shoot_factor = 0.4f + 0.6f * std::clamp(shoot_held_frame / 75.0f, 0.0f, 1.0f);
+					rocket->velocity += rocket_facing * shoot_factor * SHOOT_MOMENTUM / rocket->mass;
+					generate_bullet();
+					shoot_cooldown = 0.5f;
+					shoot_held_frame = 0;
+					bullets_shot++;
+				}
+				current_frame++;
 			} else {
-				flaming = 0;
-			}
-			rocket->rotation_speed = std::clamp(rocket->rotation_speed, -2.0f, 2.0f);
+				// rewinding
+				if (current_frame > 0) current_frame--;
 
-			if (shot) {
-				glm::vec2 rocket_facing = glm::vec2(glm::cos(rocket->rotation), glm::sin(rocket->rotation));
-				float shoot_factor = 0.4f + 0.6f * std::clamp(shoot_held_frame / 75.0f, 0.0f, 1.0f);
-				rocket->velocity += rocket_facing * shoot_factor * SHOOT_MOMENTUM / rocket->mass;
-				generate_bullet();
-				shoot_cooldown = 0.5f;
-				shoot_held_frame = 0;
-				bullets_shot++;
+				for (auto iter = bodies.begin(); iter != bodies.end(); ++iter) {
+					// for each list and name
+					if (history.find(iter->name) == history.end()) {
+						continue;
+					}
+					std::list<RBRecord> &list = history[iter->name];
+					while (!list.empty()) {
+						if (list.back().frame <= current_frame) {
+							break;
+						}
+						list.pop_back();
+						if (list.empty()) {
+							// remove its sprite, O(N) because well anyway
+							for (auto spr = sprites.begin(); spr != sprites.end(); ++spr) {
+								if (&*spr == iter->sprite) {
+									spr = sprites.erase(spr);
+									break;
+								}
+							}
+							// remove the object too
+							iter = bodies.erase(iter);
+						} else {
+							// rewind
+							RBRecord &record = list.back();
+							iter->position = record.position;
+							iter->rotation = record.rotation;
+							iter->velocity = record.velocity;
+							iter->rotation_speed = record.rotation_speed;
+						}
+					}
+				}
+
+			}
+
+			// DO physics recording history
+			
+			for (RigidBody &body: bodies) {
+				if (history.find(body.name) == history.end()) {
+					history[body.name] = std::list<RBRecord>();
+					history[body.name].emplace_back(current_frame, body.position, body.velocity, body.mass, body.radius, body.rotation, body.rotation_speed);
+				} else {
+					RBRecord &last = history[body.name].back();
+					if (body.position != last.position || body.velocity != last.velocity || last.rotation != body.rotation || body.rotation_speed != last.rotation_speed) {
+						history[body.name].emplace_back(current_frame, body.position, body.velocity, body.mass, body.radius, body.rotation, body.rotation_speed);
+					}
+				}
 			}
 		}
 
@@ -347,16 +432,6 @@ void PlayMode::update(float elapsed) {
 			rocket->sprite->set_scale(glm::vec2(6.0f - 20 * v, 6.0f + 10 * v));
 		}
 
-	}
-
-	{ // remove bodies that has exited
-		for (auto iter = bodies.begin(); iter != bodies.end(); ) {
-			if (std::abs(iter->position.x) > 100.0f || std::abs(iter->position.y) > 100.0f) {
-				iter = bodies.erase(iter);
-			} else {
-				++iter;
-			}
-		}
 	}
 
 	if (game_clear) { // if game beaten
@@ -501,7 +576,7 @@ void PlayMode::generate_bullet() {
 	if (rocket == nullptr) return;
 	glm::vec2 rocket_facing = glm::vec2(glm::cos(rocket->rotation), glm::sin(rocket->rotation));
 	Sprite2D *spr = add_sprite(*pea_texture.value, glm::vec2(0.0f), glm::vec2(3.0f));
-	RigidBody *body = add_body("Bullet", rocket->position - rocket_facing * (rocket->radius + 2.4f), 0.75f, 2.4f, spr);
+	RigidBody *body = add_body("Bullet" + std::to_string(bullets_shot), rocket->position - rocket_facing * (rocket->radius + 2.4f), 0.75f, 2.4f, spr);
 	float shoot_factor = 0.4f + 0.6f * std::clamp(shoot_held_frame / 75.0f, 0.0f, 1.0f);
 	body->velocity = -rocket_facing * shoot_factor * SHOOT_MOMENTUM / body->mass + rocket->velocity;
 	body->position += body->velocity * TIMESTEP;  // move away from rocket without collision

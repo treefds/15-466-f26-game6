@@ -105,6 +105,18 @@ struct RigidBody {
 	// void queue_free();
 };
 
+
+struct RBRecord {
+	size_t frame;           // which frame?
+	glm::vec2 position;     // position of the rigid body
+	glm::vec2 velocity;     // velocity!
+	float mass = 1.0f;             // mass of object!
+	float radius = 0.0f;           // radius of the collision shape
+	float rotation = 0.0f;         // radian rotation
+	float rotation_speed = 0.0f;   // rotation_speed in radian
+};
+
+
 struct PlayMode : Mode {
 	PlayMode();
 	virtual ~PlayMode();
@@ -129,7 +141,7 @@ struct PlayMode : Mode {
 	struct Button {
 		uint8_t downs = 0;
 		uint8_t pressed = 0;
-	} left, right, down, up, shoot;
+	} left, right, down, up, shoot, rewind;
 
 	//local copy of the game scene (so code can change it during gameplay):
 	Scene scene;
@@ -162,14 +174,18 @@ struct PlayMode : Mode {
 	float physics_frame_delta = 0.0f;
 	float shoot_cooldown = 0.0f;
 	float shoot_pressed = 0.0f;
+	float framestepping_interval = TIMESTEP;
 	bool shot = false;
 	int flaming = 0; // 1 = counterclockwise, -1=clockwise, 0=stop
 
 	//statistics
+	size_t current_frame = 0;
 	float used_time = 0.0f;
 	int bullets_shot = 0;
 	int rocket_collision_count = 0;
 	int damage = 0;
 	bool game_clear = false;
 
+	// history tracking
+	std::unordered_map<std::string, std::list<RBRecord>> history;
 };
