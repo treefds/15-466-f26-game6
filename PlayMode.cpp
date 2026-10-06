@@ -13,6 +13,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <algorithm>
+#include <unordered_map>
 #include <list>
 #include <random>
 
@@ -246,28 +247,6 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 }
 
 void PlayMode::update(float elapsed) {
-	//move camera:
-	if (0 > 1) {
-
-		//combine inputs into a move:
-		constexpr float PlayerSpeed = 30.0f;
-		glm::vec2 move = glm::vec2(0.0f);
-		if (left.pressed && !right.pressed) move.x =-1.0f;
-		if (!left.pressed && right.pressed) move.x = 1.0f;
-		if (down.pressed && !up.pressed) move.y =-1.0f;
-		if (!down.pressed && up.pressed) move.y = 1.0f;
-
-		//make it so that moving diagonally doesn't go faster:
-		if (move != glm::vec2(0.0f)) move = glm::normalize(move) * PlayerSpeed * elapsed;
-
-		glm::mat4x3 frame = camera->transform->make_parent_from_local();
-		glm::vec3 frame_right = frame[0];
-		//glm::vec3 up = frame[1];
-		glm::vec3 frame_forward = -frame[2];
-
-		camera->transform->position += move.x * frame_right + move.y * frame_forward;
-	}
-
 	{ // run physics frame for each object in game.
 		// elapsed is not stable... so there will be some condition for doing a frame.
 		used_time += elapsed;
@@ -277,7 +256,13 @@ void PlayMode::update(float elapsed) {
 		while (physics_frame_delta > framestepping_interval) {
 			physics_frame_delta -= framestepping_interval;
 
-			if (!rewind.pressed) {
+			if (current_frame == 23000) {
+				std::cout << "Warning! The game has recorded a lot of frames, which uses a lot of memory.\n"
+				             "To avoid burning down someone's computer, the game stops progressing after 24000 frames.\n";
+			}
+			if (current_frame > 24000 && !rewind.pressed) {
+
+			} else if (!rewind.pressed) {
 				shot = false;
 				if (shoot_cooldown == 0.0f && shoot.downs) {
 					shoot_held_frame++;
@@ -364,11 +349,11 @@ void PlayMode::update(float elapsed) {
 		}
 
 		// winning condition check
-		if (glm::length(rocket->position - GOAL_POS) < 3.5f && !game_clear) {
+		if (glm::length(rocket->position - GOAL_POS) < 5.5f && !game_clear) {
 			game_clear = true;
 			add_sprite(*congrat_texture.value, glm::vec2(0.0f, 0.0f), glm::vec2(40.0f));
 
-			text_renderer.text = "Time: " + std::to_string(static_cast<int>(used_time)) + "   Bullets: " + std::to_string(bullets_shot) + "   Damage: " + std::to_string(damage);
+			text_renderer.text = "Time: " + std::to_string(static_cast<int>(used_time)) + "   #Shot: " + std::to_string(bullets_shot) + "   Damage: " + std::to_string(damage);
 			auto texture = text_renderer.Rasterize(0, text_w, text_h);
 			text_texture.overwrite(std::move(texture), static_cast<GLsizei>(text_w), static_cast<GLsizei>(text_h));
 			win_sprite = add_sprite(text_texture, glm::vec2(5.0f, -20.0f), glm::vec2(text_w * 0.03f, text_h * 0.03f));
@@ -464,7 +449,7 @@ void PlayMode::step_physics_frame() {
 			glm::vec2 pq = other->position - iter->position;  // P--->Q
 
 			// special condition. If already clipping badly, ignore it
-			if (glm::length(pq) < iter->radius) {
+			if (glm::length(pq) < (iter->radius + other->radius)) {
 				continue;
 			}
 			

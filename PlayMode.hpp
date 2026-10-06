@@ -5,8 +5,10 @@
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
 #include <list>
 #include <vector>
+#include <unordered_map>
 #include <deque>
 
 const float PI = 3.1415926535897932384626f;
